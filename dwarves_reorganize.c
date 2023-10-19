@@ -189,6 +189,7 @@ static bool class__move_member(struct class *class, struct class_member *dest,
 			      struct class_member *from, const struct cu *cu,
 			      int from_padding, const int verbose, FILE *fp)
 {
+	printf("move %s to %s'hole\n", from->name, dest->name);
 	const size_t from_size = from->byte_size;
 	const size_t dest_size = dest->byte_size;
 
@@ -211,16 +212,19 @@ static bool class__move_member(struct class *class, struct class_member *dest,
 	 */
 	const uint16_t offset = dest->hole % (from_size > cu->addr_size ?
 						cu->addr_size : from_size);
+	
+	printf("offset:%u\n", offset);
 	/*
 	 * Set new 'from' offset, after 'dest->byte_offset', aligned
 	 */
 	const uint16_t new_from_offset = dest->byte_offset + dest_size + offset;
+	printf("new_from_offset:%u\n", new_from_offset);
 
 	if (verbose)
 		fputs("/* Moving", fp);
 
+	struct class_member *pos, *tmp;
 	if (from->bitfield_size != 0) {
-		struct class_member *pos, *tmp;
 		LIST_HEAD(from_list);
 
 		if (verbose)
@@ -245,6 +249,12 @@ static bool class__move_member(struct class *class, struct class_member *dest,
 	} else {
 		if (verbose)
 			fprintf(fp, " '%s'", class_member__name(from));
+
+		// 当结构体成员需要移动时，移动前需要重新计算该成员后面的所有成员的偏移位置。
+		class__for_each_member_safe_from(class, class_member__next(from), pos, tmp) {
+			printf("### name:%s, byte_offset:%d\n", pos->name, pos->byte_offset);
+			pos->byte_offset -= from->byte_size + from->hole;
+		}
 		/*
 		 *  Remove 'from' from the list
 		 */
@@ -302,6 +312,12 @@ static bool class__move_member(struct class *class, struct class_member *dest,
 		}
 	}
 
+	printf("after move, before recalc holes\n");
+	struct class_member *member;
+	type__for_each_data_member(&class->type, member) {
+		printf("member->name:%s, member->byte_offset:%d, member->byte_size:%ld, member->hole:%d\n",
+			member->name, member->byte_offset, member->byte_size, member->hole);
+	}
 	class__recalc_holes(class);
 
 	if (verbose > 1) {
@@ -740,6 +756,7 @@ void class__reorganize(struct class *class, const struct cu *cu,
 #endif
 	/* Now try to combine holes */
 restart:
+	printf("start to reorganize\n");
 	alignment_size = 0;
 	/*
 	 * It can be NULL if this class doesn't have any data members,
@@ -751,6 +768,8 @@ restart:
 
 	type__for_each_data_member(&class->type, member) {
 		const size_t aligned_size = member->byte_size + member->hole;
+		printf("member->name:%s, member->byte_offset:%d, member->byte_size:%ld, member->hole:%d, aligned_size:%ld, alignment_size:%ld\n",
+			member->name, member->byte_offset, member->byte_size, member->hole, aligned_size, alignment_size);
 		if (aligned_size <= cu->addr_size &&
 		    aligned_size > alignment_size)
 			alignment_size = aligned_size;
@@ -779,6 +798,7 @@ restart:
 	type__for_each_data_member(&class->type, member) {
 		/* See if we have a hole after this member */
 		if (member->hole != 0) {
+			printf("first hole is %s\n", member->name);
 			/*
 			 * OK, try to find a member that has a hole after it
 			 * and that has a size that fits the current hole:
@@ -786,6 +806,7 @@ restart:
 			brother = class__find_next_hole_of_size(class, member,
 								member->hole);
 			if (brother != NULL) {
+				printf("find brother hole is %s\n", brother->name);
 				struct class_member *brother_prev =
 					    list_entry(brother->tag.node.prev,
 						       struct class_member,

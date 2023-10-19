@@ -1436,6 +1436,7 @@ const struct class_member *class__find_bit_hole(const struct class *class,
 
 void class__find_holes(struct class *class)
 {
+	printf("start to find holes\n");
 	const struct type *ctype = &class->type;
 	struct class_member *pos, *last = NULL;
 	uint32_t cur_bitfield_end = ctype->size * 8, cur_bitfield_size = 0;
@@ -1518,6 +1519,9 @@ void class__find_holes(struct class *class)
 			cur_bitfield_size = 0;
 			cur_bitfield_end = bit_end;
 		}
+
+		printf("member:%s, byte_offset:%d, byte_size:%ld, hole:%d\n",
+			pos->name, pos->byte_offset, pos->byte_size, byte_holes);
 
 		if (last) {
 			last->hole = byte_holes;
